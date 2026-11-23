@@ -2,7 +2,11 @@ package com.fazon.barrier.agent;
 
 import javax.tools.*;
 import java.io.*;
-import java.lang.reflect.InvocationTargetException;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassModel;
+import java.lang.classfile.constantpool.ClassEntry;
+import java.lang.classfile.constantpool.MemberRefEntry;
+import java.lang.classfile.constantpool.PoolEntry;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -111,7 +115,7 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
         Map<String, byte[]> bytecodeByClassName = compileInMemory(className, source);
 
         for (byte[] bytecode : bytecodeByClassName.values()) {
-            verifyConstantPool(bytecode, className);
+            verifyBytecode(bytecode, className);
         }
 
         ClassLoader sandboxLoader = new ClassLoader(ReadOnlyAgentSandbox.class.getClassLoader()) {
@@ -135,10 +139,14 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
             Future<Object> future = executor.submit(() -> task.execute(frozenContext));
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            throw new SecurityException("Agent execution exceeded timeout of " + timeout);
+            throw new SecurityException("Agent execution exceeded timeout of " + timeout, e);
         } catch (ExecutionException e) {
-            Throwable cause = (e.getCause() instanceof InvocationTargetException ite) ? ite.getCause() : e.getCause();
-            throw new RuntimeException("Agent execution failed: " + cause.getMessage(), cause);
+            Throwable cause = e.getCause();
+            String causeMessage = cause.getMessage() == null || cause.getMessage().isBlank()
+                    ? cause.getClass().getName()
+                    : cause.getClass().getName() + ": " + cause.getMessage();
+
+            throw new RuntimeException("Agent execution failed with " + causeMessage, cause);
         }
     }
 
@@ -207,64 +215,64 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
         }
     }
 
+    /**
+     * Verify byte code uses Java's new Class-File API to avoid inspection overhead
+     * @param classBytes
+     * @param generatedClassName
+     */
+    void verifyBytecode(byte[] classBytes, String generatedClassName) {
+        ClassModel model = ClassFile.of().parse(classBytes);
 
-    public void verifyConstantPool(byte[] classBytes, String selfClassName) throws IOException {
-        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(classBytes))) {
-            if (in.readInt() != 0xCAFEBABE) throw new SecurityException("Invalid classfile");
-            in.readUnsignedShort();
-            in.readUnsignedShort();
+        for (PoolEntry entry : model.constantPool()) {
+            if (entry instanceof ClassEntry classEntry) {
+                String owner = classEntry.asInternalName();
 
-            int cpCount = in.readUnsignedShort();
-            String[] utf8 = new String[cpCount];
-            List<Integer> classNameIndices = new ArrayList<>();
-
-            for (int i = 1; i < cpCount; i++) {
-                int tag = in.readUnsignedByte();
-                switch (tag) {
-                    case 1 -> utf8[i] = in.readUTF();
-                    case 7 -> classNameIndices.add(in.readUnsignedShort());
-                    case 8, 16, 19, 20 -> in.readUnsignedShort();
-                    case 3, 4 -> in.readInt();
-                    case 5, 6 -> {
-                        in.readLong();
-                        i++;
-                    }
-                    case 9, 10, 11, 12, 17, 18 -> {
-                        in.readUnsignedShort();
-                        in.readUnsignedShort();
-                    }
-                    case 15 -> {
-                        in.readUnsignedByte();
-                        in.readUnsignedShort();
-                    }
-                    default -> throw new SecurityException("Unsupported constant pool tag: " + tag);
+                if (!isGeneratedSnippetClass(owner, generatedClassName) && !isAllowedOwner(owner)) {
+                    throw new SecurityException("Blocked class reference: " + owner);
                 }
             }
 
-            for (int idx : classNameIndices) {
-                String internalName = utf8[idx];
+            if (entry instanceof MemberRefEntry ref) {
+                String owner = ref.owner().asInternalName();
+                String name = ref.name().stringValue();
 
-                if (internalName == null || internalName.startsWith("[")) {
-                    continue;
-                }
-
-                boolean generatedAgentClass = internalName.equals(selfClassName)
-                        || internalName.startsWith(selfClassName + "$");
-
-                if (generatedAgentClass) {
-                    continue;
-                }
-
-                boolean allowed = ALLOWED_PACKAGE_PREFIXES.stream().anyMatch(allowedName ->
-                        allowedName.endsWith("/")
-                                ? internalName.startsWith(allowedName)
-                                : internalName.equals(allowedName)
-                );
-
-                if (!allowed) {
-                    throw new SecurityException("Blocked unauthorized class reference in agent bytecode: " + internalName);
+                if (!isGeneratedSnippetClass(owner, generatedClassName) && !isAllowed(owner, name)) {
+                    throw new SecurityException("Blocked call: " + owner + "." + name);
                 }
             }
         }
+    }
+
+    private boolean isGeneratedSnippetClass(String owner, String generatedClassName) {
+        return owner.equals(generatedClassName) || owner.startsWith(generatedClassName + "$");
+    }
+
+    public boolean isAllowed(String owner, String name) {
+        return isAllowedOwner(owner) && isAllowedMember(owner, name);
+    }
+
+    private boolean isAllowedOwner(String owner) {
+        return ALLOWED_PACKAGE_PREFIXES.stream().anyMatch(allowedName ->
+                allowedName.endsWith("/")
+                        ? owner.startsWith(allowedName)
+                        : owner.equals(allowedName)
+        );
+    }
+
+    private boolean isAllowedMember(String owner, String name) {
+        if (owner.equals("java/lang/System")) {
+            return switch (name) {
+                case "lineSeparator", "nanoTime", "currentTimeMillis" -> true;
+                default -> false;
+            };
+        }
+
+        return !owner.equals("java/lang/Class")
+                && !owner.equals("java/lang/ClassLoader")
+                && !owner.equals("java/lang/Runtime")
+                && !owner.equals("java/lang/ProcessBuilder")
+                && !owner.startsWith("java/lang/reflect/")
+                && !owner.startsWith("java/lang/invoke/MethodHandle")
+                && !owner.startsWith("java/lang/invoke/MethodHandles");
     }
 }
