@@ -62,10 +62,10 @@ List<String> result = sandbox.run(agentCode, context, Duration.ofSeconds(2));
 
 ## Why Kekkai?
 
-• Sub-Millisecond Cold Starts: Compiles and executes snippets directly in memory using standard JVM APIs—no container orchestration or IPC serialization required.
-• Strict Allowlist Security: Instead of trying to maintain an endless blocklist of dangerous APIs, Kekkai inspects the compiled .class constant pool and rejects anything not explicitly permitted.
-• Zero-Copy Context Passing: Safely expose domain objects to the agent via immutable snapshots, letting agents query, filter, and transform complex data structures natively in Java.
-• Virtual Thread Isolation: Built for modern Java (Java 21+), executing untrusted tasks on lightweight virtual threads with strict timeout enforcement.
+* Sub-Millisecond Cold Starts: Compiles and executes snippets directly in memory using standard JVM APIs—no container orchestration or IPC serialization required.
+* Strict Allowlist Security: Instead of trying to maintain an endless blocklist of dangerous APIs, Kekkai inspects the compiled .class constant pool and rejects anything not explicitly permitted.
+* Zero-Copy Context Passing: Safely expose domain objects to the agent via immutable snapshots, letting agents query, filter, and transform complex data structures natively in Java.
+* Virtual Thread Isolation: Built for modern Java (Java 21+), executing untrusted tasks on lightweight virtual threads with strict timeout enforcement.
 
 ## How it works
 Kekkai is a bytecode instrumentation sandbox that provides the following guarantees:
