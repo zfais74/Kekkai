@@ -2,6 +2,7 @@ package com.fazon;
 
 import com.fazon.barrier.KekkaiSandbox;
 import com.fazon.barrier.agent.ReadOnlyAgentSandbox;
+import com.fazon.barrier.context.ContextEntry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,8 @@ class ReadOnlyAgentSandboxTest {
                     "ORD-102", 1400.50,
                     "ORD-103", 89.99
             );
+
+            var orderContext = ContextEntry.of("orders", orders, Map.class);
             var anonClassCode = """
                     List<String> keys = new ArrayList<>(((Map<String, Double>) ctx.get("orders")).keySet());
                     keys.sort(new Comparator<String>() {
@@ -35,7 +38,7 @@ class ReadOnlyAgentSandboxTest {
                     return keys;
                     """;
 
-            var result = agent.run(anonClassCode, Map.of("orders", orders), Duration.ofSeconds(2));
+            var result = agent.run(anonClassCode, List.of(orderContext), Duration.ofSeconds(2));
             assertEquals(List.of("ORD-103", "ORD-102", "ORD-101"), result);
         }
 
@@ -48,7 +51,7 @@ class ReadOnlyAgentSandboxTest {
             Supplier<List<String>> inputSupplier = () -> List.of("agent", "sandbox", "java", "lambda", "test");
             """;
 
-            assertThrows(IllegalArgumentException.class, () -> agent.run(inputSupplier, Map.of(), Duration.ofSeconds(2)));
+            assertThrows(IllegalArgumentException.class, () -> agent.run(inputSupplier, List.of(), Duration.ofSeconds(2)));
         }
 
         @Test
@@ -58,6 +61,7 @@ class ReadOnlyAgentSandboxTest {
 
             List<String> items = new ArrayList<>(List.of("a", "b"));
             Map<String, Object> mutableNested = Map.of("items", items);
+            var nestedContext = ContextEntry.of("items", items, List.class);
 
             String nestedMutate = """
                     ((List<String>) ctx.get("items")).add("hacked");
@@ -66,7 +70,7 @@ class ReadOnlyAgentSandboxTest {
 
             RuntimeException exception = assertThrows(
                     RuntimeException.class,
-                    () -> agent.run(nestedMutate, mutableNested, Duration.ofSeconds(2))
+                    () -> agent.run(nestedMutate, List.of(nestedContext), Duration.ofSeconds(2))
             );
 
             assertInstanceOf(UnsupportedOperationException.class, exception.getCause());
@@ -87,7 +91,7 @@ class ReadOnlyAgentSandboxTest {
                     """;
             SecurityException exception = assertThrows(
                     SecurityException.class,
-                    () -> agent.run(reflectionEscape, Map.of(), Duration.ofSeconds(2))
+                    () -> agent.run(reflectionEscape, List.of(), Duration.ofSeconds(2))
             );
 
             assertTrue(exception.getMessage().contains("java/lang/Class"));

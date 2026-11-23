@@ -1,6 +1,7 @@
 package com.fazon;
 
 import com.fazon.barrier.KekkaiSandbox;
+import com.fazon.barrier.context.ContextEntry;
 
 import java.time.Duration;
 import java.util.*;
@@ -16,6 +17,13 @@ public class Main {
                 "ORD-103", 89.99
         );
 
+        var orderContext = ContextEntry.of("orders", orders, Map.class);
+
+        /*
+        var users = ContextEntry.of("users", List.of(new User("Alice", 30)), List.class);
+         */
+
+
         // TODO(@zeke) - add a test for the case where the agent is blocked by the sandbox
         String safeCode = """
         @SuppressWarnings("unchecked")
@@ -26,14 +34,14 @@ public class Main {
             .sorted()
             .toList();
         """;
-        IO.println("Safe result: " + barrier.run(safeCode, Map.of("orders", orders), Duration.ofSeconds(2)));
+        IO.println("Safe result: " + barrier.run(safeCode, List.of(orderContext), Duration.ofSeconds(2)));
 
         String evilCode = """
         System.exit(1);
         return null;
         """;
         try {
-            barrier.run(evilCode, Map.of("orders", orders), Duration.ofSeconds(2));
+            barrier.run(evilCode, List.of(orderContext), Duration.ofSeconds(2));
         } catch (SecurityException e) {
             System.out.println("Blocked malicious code: " + e.getMessage());
         }
@@ -43,7 +51,7 @@ public class Main {
         return null;
         """;
         try {
-            barrier.run(mutateCode, Map.of("orders", orders), Duration.ofSeconds(2));
+            barrier.run(mutateCode, List.of(orderContext), Duration.ofSeconds(2));
         } catch (RuntimeException e) {
             IO.println("Blocked mutation: " + e.getCause());
         }

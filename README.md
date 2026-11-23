@@ -23,6 +23,8 @@ You can use Kekkai in your Java project with Maven or Gradle.
 Here is a quick example using the built-in `readOnly` builder:
 ```java
 KekkaiSandbox sandbox = KekkaiSandbox.readOnly();
+var words =  List.of("agent", "sandbox", "jvm");
+var context = ContextEntry.of("words", words, List.class);
 
 Object result = sandbox.run("""
         List<String> words = (List<String>) ctx.get("words");
@@ -30,7 +32,7 @@ Object result = sandbox.run("""
                 .filter(word -> word.length() > 4)
                 .toList();
         """,
-        Map.of("words", List.of("agent", "sandbox", "jvm")),
+        List.of(context),
         Duration.ofSeconds(2)
 );
 ```
@@ -40,6 +42,11 @@ var context = Map.of(
 "users", List.of("Alice", "Bob", "Charlie"),
 "threshold", 5
 );
+
+record User(String name, int age) {}
+
+var users = ContextEntry.of("users", List.of(new User("Alice", 30)), List.class);
+var minAge = ContextEntry.of("minAge", 21, Integer.class);
 
 //  configure kekkai
 KekkaiSandbox sandbox = KekkaiSandbox.builder()
@@ -54,8 +61,15 @@ return users.stream()
 .toList();
 """;
 
-List<String> result = sandbox.run(agentCode, context, Duration.ofSeconds(2));
-// -> ["Alice", "Charlie"]
+
+List<String> result = sandbox.run("""
+                return users.stream()
+                    .filter(u -> u.age() >= minAge)
+                    .map(User::name)
+                    .toList();
+                """,
+        List.of(users, minAge)
+);
 ``` 
 
 

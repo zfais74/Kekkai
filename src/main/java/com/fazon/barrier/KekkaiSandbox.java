@@ -2,11 +2,10 @@ package com.fazon.barrier;
 
 import com.fazon.barrier.agent.Agent;
 import com.fazon.barrier.agent.ReadOnlyAgentSandbox;
+import com.fazon.barrier.context.ContextEntry;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class KekkaiSandbox {
     private final SandboxMode mode;
@@ -33,7 +32,7 @@ public class KekkaiSandbox {
         };
     }
 
-    public Object run(String agentJavaBody, Map<String, Object> context, Duration timeout) throws Exception {
+    public Object run(String agentJavaBody, List<ContextEntry<?>> context, Duration timeout) throws Exception {
         return switch (agent) {
             case ReadOnlyAgentSandbox readOnlyAgentSandbox -> readOnlyAgentSandbox.run(agentJavaBody, context, timeout);
             default -> throw new UnsupportedOperationException("Unsupported agent: " + agent);

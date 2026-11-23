@@ -1,5 +1,7 @@
 package com.fazon.barrier.agent;
 
+import com.fazon.barrier.context.ContextEntry;
+
 import javax.tools.*;
 import java.io.*;
 import java.lang.classfile.ClassFile;
@@ -94,7 +96,7 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
      * @return The result of the agent.
      * @throws Exception
      */
-    public Object run(String agentJavaBody, Map<String, Object> context, Duration timeout) throws Exception {
+    public Object run(String agentJavaBody, List<ContextEntry<?>> context, Duration timeout) throws Exception {
         String className = "AgentSnippet_" + UUID.randomUUID().toString().replace("-", "");
         String source = """
                 import java.util.*;
@@ -118,21 +120,10 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
             verifyBytecode(bytecode, className);
         }
 
-        ClassLoader sandboxLoader = new ClassLoader(ReadOnlyAgentSandbox.class.getClassLoader()) {
-            @Override
-            protected Class<?> findClass(String name) throws ClassNotFoundException {
-                byte[] bytecode = bytecodeByClassName.get(name);
-                if (bytecode != null) {
-                    return defineClass(name, bytecode, 0, bytecode.length);
-                }
-                throw new ClassNotFoundException(name);
-            }
-        };
-
-        Class<?> clazz = sandboxLoader.loadClass(className);
+        Class<?> clazz = getAClass(bytecodeByClassName, className);
         AgentTask task = (AgentTask) clazz.getDeclaredConstructor().newInstance();
 
-        Map<String, Object> frozenContext = freezeContext(context);
+        Map<String, Object> frozenContext = freezeContext(toContextMap(context));
 
         // need to set a timeout on the VT
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -148,6 +139,39 @@ public record ReadOnlyAgentSandbox(Set<String> ALLOWED_PACKAGE_PREFIXES) impleme
 
             throw new RuntimeException("Agent execution failed with " + causeMessage, cause);
         }
+    }
+
+    private static Map<String, Object> toContextMap(List<ContextEntry<?>> context) {
+        Objects.requireNonNull(context, "Context cannot be null");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (ContextEntry<?> entry : context) {
+            Objects.requireNonNull(entry, "Context entry cannot be null");
+
+            if (result.containsKey(entry.name())) {
+                throw new IllegalArgumentException("Duplicate context entry name: " + entry.name());
+            }
+
+            result.put(entry.name(), entry.value());
+        }
+
+        return result;
+    }
+
+    private static Class<?> getAClass(Map<String, byte[]> bytecodeByClassName, String className) throws ClassNotFoundException {
+        ClassLoader sandboxLoader = new ClassLoader(ReadOnlyAgentSandbox.class.getClassLoader()) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytecode = bytecodeByClassName.get(name);
+                if (bytecode != null) {
+                    return defineClass(name, bytecode, 0, bytecode.length);
+                }
+                throw new ClassNotFoundException(name);
+            }
+        };
+
+        Class<?> clazz = sandboxLoader.loadClass(className);
+        return clazz;
     }
 
     private static Map<String, Object> freezeContext(Map<String, Object> context) {
