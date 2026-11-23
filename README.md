@@ -78,7 +78,4 @@ Kekkai is a bytecode instrumentation sandbox that provides the following guarant
 ## Contributing & License
 I am only one human, and you all are likely smarter than I am! Contributions, security audits, and sandbox escape attempts are welcome! Please open an issue if you find a bytecode pattern that bypasses the constant pool verifier.
 Licensed under the Apache License 2.0.
-If you'd like to refine this README further, let me know:
-• Your actual class/method signatures so I can update the Quick Start code snippet to match your real API
-• Which Java version and bytecode library (e.g., ASM, ByteBuddy, or Java's built-in Class-File API) you are using under the hood
-• Whether you'd like help designing the instruction-counting bytecode instrumentation for stopping tight loops
+
